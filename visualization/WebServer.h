@@ -100,7 +100,7 @@ public:
   PerformanceData getLatestPerformance(const std::string& strategyId) const;
   std::vector<PerformanceData>
   getPerformanceHistory(const std::string& strategyId, uint64_t startTime,
-                        uint64_t endTime) const;
+                        uint64_t endTime, size_t limit = 0) const;
   std::vector<ChartDataPoint> getChartData(const std::string& strategyId,
                                            const std::string& metric,
                                            uint64_t timeRange) const;

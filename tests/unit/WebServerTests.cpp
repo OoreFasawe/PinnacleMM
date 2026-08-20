@@ -47,6 +47,20 @@ TEST_F(PerformanceHistory, AppliesMaximumHistorySize) {
   EXPECT_EQ(history[1].timestamp, 3);
 }
 
+TEST_F(PerformanceHistory, AppliesQueryResultLimit) {
+  for (uint64_t timestamp = 1; timestamp <= 3; ++timestamp) {
+    PerformanceData data;
+    data.timestamp = timestamp;
+    collector.recordPerformance("strategy", data);
+  }
+
+  auto history = collector.getPerformanceHistory("strategy", 0, 3, 2);
+
+  ASSERT_EQ(history.size(), 2);
+  EXPECT_EQ(history[0].timestamp, 1);
+  EXPECT_EQ(history[1].timestamp, 2);
+}
+
 TEST(QueryString, ParsesStandardQueryParameters) {
   auto params = parseQueryString("start=1234567890&end=9876543210&limit=100");
 

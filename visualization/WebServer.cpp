@@ -130,7 +130,8 @@ PerformanceData PerformanceCollector::getLatestPerformance(
 }
 
 std::vector<PerformanceData> PerformanceCollector::getPerformanceHistory(
-    const std::string& strategyId, uint64_t startTime, uint64_t endTime) const {
+    const std::string& strategyId, uint64_t startTime, uint64_t endTime,
+    size_t limit) const {
   std::lock_guard<std::mutex> lock(m_mutex);
   std::vector<PerformanceData> result;
 
@@ -142,6 +143,9 @@ std::vector<PerformanceData> PerformanceCollector::getPerformanceHistory(
   for (const auto& data : it->second) {
     if (data.timestamp >= startTime && data.timestamp <= endTime) {
       result.push_back(data);
+      if (limit > 0 && result.size() == limit) {
+        break;
+      }
     }
   }
 
@@ -1012,6 +1016,7 @@ RestAPIServer::handleGetPerformance(const std::string& strategyId,
   auto params = parseQueryString(query);
   const auto hasStart = params.contains("start");
   const auto hasEnd = params.contains("end");
+  const auto hasLimit = params.contains("limit");
 
   auto parseTimestamp = [](const std::string& value, uint64_t& timestamp) {
     if (value.empty()) {
@@ -1024,12 +1029,25 @@ RestAPIServer::handleGetPerformance(const std::string& strategyId,
            result.ptr == value.data() + value.size();
   };
 
+  auto parseLimit = [](const std::string& value, size_t& limit) {
+    if (value.empty()) {
+      return false;
+    }
+
+    auto result =
+        std::from_chars(value.data(), value.data() + value.size(), limit);
+    return result.ec == std::errc{} &&
+           result.ptr == value.data() + value.size();
+  };
+
   json performance;
-  if (hasStart || hasEnd) {
+  if (hasStart || hasEnd || hasLimit) {
     uint64_t startTime = 0;
     uint64_t endTime = std::numeric_limits<uint64_t>::max();
+    size_t limit = 0;
     if ((hasStart && !parseTimestamp(params.at("start"), startTime)) ||
         (hasEnd && !parseTimestamp(params.at("end"), endTime)) ||
+        (hasLimit && !parseLimit(params.at("limit"), limit)) ||
         startTime > endTime) {
       http::response<http::string_body> res{http::status::bad_request, 11};
       res.set(http::field::server, "PinnacleMM-Visualization/1.0");
@@ -1041,8 +1059,8 @@ RestAPIServer::handleGetPerformance(const std::string& strategyId,
     }
 
     json history = json::array();
-    for (const auto& data :
-         m_collector->getPerformanceHistory(strategyId, startTime, endTime)) {
+    for (const auto& data : m_collector->getPerformanceHistory(
+             strategyId, startTime, endTime, limit)) {
       history.push_back({{"timestamp", data.timestamp},
                          {"pnl", data.pnl},
                          {"position", data.position},
