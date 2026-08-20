@@ -61,6 +61,29 @@ TEST_F(PerformanceHistory, AppliesQueryResultLimit) {
   EXPECT_EQ(history[1].timestamp, 2);
 }
 
+TEST(ChartHistory, FiltersPointsByTimeRange) {
+  PerformanceCollector collector;
+  ChartDataPoint first;
+  first.timestamp = 100;
+  first.value = 1.0;
+  ChartDataPoint second;
+  second.timestamp = 200;
+  second.value = 2.0;
+  ChartDataPoint third;
+  third.timestamp = 300;
+  third.value = 3.0;
+
+  collector.recordChartData("strategy", "pnl", first);
+  collector.recordChartData("strategy", "pnl", second);
+  collector.recordChartData("strategy", "pnl", third);
+
+  auto history = collector.getChartDataInRange("strategy", "pnl", 200, 300);
+
+  ASSERT_EQ(history.size(), 2);
+  EXPECT_EQ(history[0].timestamp, 200);
+  EXPECT_EQ(history[1].timestamp, 300);
+}
+
 TEST(QueryString, ParsesStandardQueryParameters) {
   auto params = parseQueryString("start=1234567890&end=9876543210&limit=100");
 

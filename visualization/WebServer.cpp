@@ -18,6 +18,11 @@ namespace visualization {
 
 namespace {
 
+std::string chartHistoryKey(const std::string& strategyId,
+                            const std::string& metric) {
+  return strategyId + '\0' + metric;
+}
+
 bool decodeQueryComponent(const std::string& encoded, std::string& decoded) {
   decoded.clear();
   decoded.reserve(encoded.size());
@@ -85,6 +90,13 @@ void PerformanceCollector::unregisterStrategy(const std::string& strategyId) {
   std::lock_guard<std::mutex> lock(m_mutex);
   m_performanceData.erase(strategyId);
   m_performanceHistory.erase(strategyId);
+  for (auto it = m_chartHistory.begin(); it != m_chartHistory.end();) {
+    if (it->first.starts_with(strategyId + '\0')) {
+      it = m_chartHistory.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void PerformanceCollector::recordPerformance(const std::string& strategyId,
@@ -156,8 +168,37 @@ std::vector<ChartDataPoint>
 PerformanceCollector::getChartData(const std::string& strategyId,
                                    const std::string& metric,
                                    uint64_t timeRange) const {
+  auto endTime = utils::TimeUtils::getCurrentNanos();
+  auto startTime = endTime > timeRange ? endTime - timeRange : 0;
+  return getChartDataInRange(strategyId, metric, startTime, endTime);
+}
+
+void PerformanceCollector::recordChartData(const std::string& strategyId,
+                                           const std::string& metric,
+                                           const ChartDataPoint& data) {
+  std::lock_guard<std::mutex> lock(m_mutex);
+  auto& history = m_chartHistory[chartHistoryKey(strategyId, metric)];
+  history.push_back(data);
+  while (history.size() > m_maxHistorySize) {
+    history.pop_front();
+  }
+}
+
+std::vector<ChartDataPoint> PerformanceCollector::getChartDataInRange(
+    const std::string& strategyId, const std::string& metric,
+    uint64_t startTime, uint64_t endTime) const {
+  std::lock_guard<std::mutex> lock(m_mutex);
   std::vector<ChartDataPoint> result;
-  // Return empty for now - can be implemented later
+  auto it = m_chartHistory.find(chartHistoryKey(strategyId, metric));
+  if (it == m_chartHistory.end()) {
+    return result;
+  }
+
+  for (const auto& point : it->second) {
+    if (point.timestamp >= startTime && point.timestamp <= endTime) {
+      result.push_back(point);
+    }
+  }
   return result;
 }
 
@@ -172,6 +213,12 @@ void PerformanceCollector::setMaxHistorySize(size_t maxSize) {
 
   for (auto& [strategyId, history] : m_performanceHistory) {
     boost::ignore_unused(strategyId);
+    while (history.size() > m_maxHistorySize) {
+      history.pop_front();
+    }
+  }
+  for (auto& [key, history] : m_chartHistory) {
+    boost::ignore_unused(key);
     while (history.size() > m_maxHistorySize) {
       history.pop_front();
     }
@@ -1105,14 +1152,78 @@ http::response<http::string_body>
 RestAPIServer::handleGetChartData(const std::string& strategyId,
                                   const std::string& metric,
                                   const std::string& query) {
-  boost::ignore_unused(query);
+  constexpr uint64_t nanosPerSecond = 1000000000ULL;
+  auto params = parseQueryString(query);
+  auto endTime = utils::TimeUtils::getCurrentNanos();
+  auto startTime = endTime - 3600ULL * nanosPerSecond;
+
+  auto parseTimestamp = [](const std::string& value, uint64_t& timestamp) {
+    auto result =
+        std::from_chars(value.data(), value.data() + value.size(), timestamp);
+    return !value.empty() && result.ec == std::errc{} &&
+           result.ptr == value.data() + value.size();
+  };
+
+  auto parseRange = [&](const std::string& value, uint64_t& duration) {
+    if (value.size() < 2) {
+      return false;
+    }
+    uint64_t amount = 0;
+    if (!parseTimestamp(value.substr(0, value.size() - 1), amount)) {
+      return false;
+    }
+    const auto unit = value.back();
+    const auto multiplier = unit == 's'   ? nanosPerSecond
+                            : unit == 'm' ? 60ULL * nanosPerSecond
+                            : unit == 'h' ? 3600ULL * nanosPerSecond
+                            : unit == 'd' ? 86400ULL * nanosPerSecond
+                                          : 0;
+    if (multiplier == 0 ||
+        amount > std::numeric_limits<uint64_t>::max() / multiplier) {
+      return false;
+    }
+    duration = amount * multiplier;
+    return true;
+  };
+
+  const auto hasStart = params.contains("start");
+  const auto hasEnd = params.contains("end");
+  const auto hasRange = params.contains("range");
+  if (hasStart || hasEnd) {
+    startTime = 0;
+    endTime = std::numeric_limits<uint64_t>::max();
+    if ((hasStart && !parseTimestamp(params.at("start"), startTime)) ||
+        (hasEnd && !parseTimestamp(params.at("end"), endTime)) ||
+        startTime > endTime) {
+      http::response<http::string_body> res{http::status::bad_request, 11};
+      res.set(http::field::server, "PinnacleMM-Visualization/1.0");
+      res.set(http::field::content_type, "application/json");
+      res.body() = createErrorResponse("Invalid chart time range", 400).dump();
+      res.prepare_payload();
+      return res;
+    }
+  } else if (hasRange) {
+    uint64_t duration = 0;
+    if (!parseRange(params.at("range"), duration)) {
+      http::response<http::string_body> res{http::status::bad_request, 11};
+      res.set(http::field::server, "PinnacleMM-Visualization/1.0");
+      res.set(http::field::content_type, "application/json");
+      res.body() = createErrorResponse("Invalid chart range", 400).dump();
+      res.prepare_payload();
+      return res;
+    }
+    startTime = endTime > duration ? endTime - duration : 0;
+  }
 
   auto chartData =
-      m_collector->getChartData(strategyId, metric, 3600000000000ULL); // 1 hour
+      m_collector->getChartDataInRange(strategyId, metric, startTime, endTime);
 
   json data = json::array();
   for (const auto& point : chartData) {
-    data.push_back({{"timestamp", point.timestamp}, {"value", point.value}});
+    data.push_back({{"timestamp", point.timestamp},
+                    {"value", point.value},
+                    {"label", point.label},
+                    {"color", point.color}});
   }
 
   auto response = createSuccessResponse(data);
@@ -1455,6 +1566,14 @@ void VisualizationServer::recordPerformance(const std::string& strategyId,
                                             const PerformanceData& data) {
   if (m_collector) {
     m_collector->recordPerformance(strategyId, data);
+  }
+}
+
+void VisualizationServer::recordChartData(const std::string& strategyId,
+                                          const std::string& metric,
+                                          const ChartDataPoint& data) {
+  if (m_collector) {
+    m_collector->recordChartData(strategyId, metric, data);
   }
 }
 

@@ -105,6 +105,12 @@ public:
   std::vector<ChartDataPoint> getChartData(const std::string& strategyId,
                                            const std::string& metric,
                                            uint64_t timeRange) const;
+  void recordChartData(const std::string& strategyId, const std::string& metric,
+                       const ChartDataPoint& data);
+  std::vector<ChartDataPoint> getChartDataInRange(const std::string& strategyId,
+                                                  const std::string& metric,
+                                                  uint64_t startTime,
+                                                  uint64_t endTime) const;
   size_t getRegisteredStrategiesCount() const;
   void setMaxHistorySize(size_t maxSize);
   void updateMarketData(const std::string& symbol, const MarketData& data);
@@ -117,6 +123,7 @@ private:
   size_t m_maxHistorySize{10000};
   std::unordered_map<std::string, std::deque<PerformanceData>>
       m_performanceHistory;
+  std::unordered_map<std::string, std::deque<ChartDataPoint>> m_chartHistory;
   std::unordered_map<std::string, MarketData> m_marketData;
 };
 
@@ -322,6 +329,8 @@ public:
   void updateMarketData(const std::string& symbol, const MarketData& data);
   void recordPerformance(const std::string& strategyId,
                          const PerformanceData& data);
+  void recordChartData(const std::string& strategyId, const std::string& metric,
+                       const ChartDataPoint& data);
 
   // Backtest integration
   void addBacktestResults(const std::string& backtestId,
