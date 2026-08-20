@@ -964,6 +964,13 @@ RestAPIServer::handleRequest(http::request<http::string_body>&& req) {
     auto end = path.find("/performance");
     auto strategyId = path.substr(start, end - start);
     return handleGetPerformance(strategyId, query);
+  } else if (path.starts_with("/api/v1/strategies/") &&
+             path.find("/charts/") != std::string::npos) {
+    auto start = path.find("/api/v1/strategies/") + 19;
+    auto charts = path.find("/charts/", start);
+    auto strategyId = path.substr(start, charts - start);
+    auto metric = path.substr(charts + 8);
+    return handleGetChartData(strategyId, metric, query);
   } else if (path == "/api/risk/state") {
     return handleGetRiskState();
   } else if (path == "/api/risk/var") {
@@ -1201,7 +1208,7 @@ parseQueryString(const std::string& query) {
   return params;
 }
 
-std::string RestAPIServer::extractPath(const std::string& target) {
+std::string extractPath(const std::string& target) {
   auto pos = target.find('?');
   return pos != std::string::npos ? target.substr(0, pos) : target;
 }

@@ -106,4 +106,9 @@ TEST(QueryString, SkipsMalformedParameters) {
   EXPECT_EQ(params.count("empty-key"), 1);
 }
 
+TEST(ChartRouting, ExtractsStrategyAndMetricPath) {
+  EXPECT_EQ(extractPath("/api/v1/strategies/strategy/charts/pnl?range=1h"),
+            "/api/v1/strategies/strategy/charts/pnl");
+}
+
 } // namespace pinnacle::visualization
