@@ -192,6 +192,22 @@ TEST_F(RestHandler, RejectsInvalidPerformanceLimit) {
             http::status::bad_request);
 }
 
+TEST_F(RestHandler, ReturnsRecordedPerformanceThroughRangeQuery) {
+  PerformanceData data;
+  data.timestamp = 100;
+  data.pnl = 4.5;
+  collector->recordPerformance("strategy", data);
+
+  auto response =
+      get("/api/v1/strategies/strategy/performance?start=100&end=100");
+  auto body = nlohmann::json::parse(response.body());
+
+  ASSERT_EQ(response.result(), http::status::ok);
+  ASSERT_EQ(body["data"].size(), 1);
+  EXPECT_EQ(body["data"][0]["timestamp"], 100);
+  EXPECT_DOUBLE_EQ(body["data"][0]["pnl"], 4.5);
+}
+
 TEST_F(PerformanceHistory, UnregisterClearsHistory) {
   PerformanceData data;
   data.timestamp = 100;

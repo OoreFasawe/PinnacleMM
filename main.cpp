@@ -808,6 +808,17 @@ int main(int argc, char* argv[]) {
       // Current time
       uint64_t currentTime = pinnacle::utils::TimeUtils::getCurrentMillis();
 
+#ifdef BUILD_VISUALIZATION
+      if (vizServer) {
+        pinnacle::visualization::PerformanceData performanceData;
+        performanceData.timestamp =
+            pinnacle::utils::TimeUtils::getCurrentNanos();
+        performanceData.pnl = strategy->getPnL();
+        performanceData.position = strategy->getPosition();
+        vizServer->recordPerformance("primary_strategy", performanceData);
+      }
+#endif
+
       // Print statistics periodically
       if (currentTime - lastStatsTime > 5000) { // Every 5 seconds
         spdlog::info("======================");
