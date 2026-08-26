@@ -126,6 +126,37 @@ Backtest mode prints a detailed performance report (Sharpe ratio, drawdown, win 
 
 For all command-line options, run modes, multi-instrument setups, and the visualization dashboard, see the [Getting Started Guide](docs/user_guide/getting_started.md).
 
+### REST Performance and Chart Queries
+
+When visualization is enabled, the REST API provides the latest performance
+snapshot and retained performance history:
+
+```http
+GET /api/v1/strategies/{strategy_id}/performance
+```
+
+Supported performance parameters are `start` and `end` timestamp bounds and an
+optional `limit`. Requests without these parameters return the latest snapshot
+as an object. Requests with any of them return an array of matching snapshots.
+
+```http
+GET /api/v1/strategies/primary_strategy/performance?start=100&end=300&limit=50
+```
+
+Chart data is available through:
+
+```http
+GET /api/v1/strategies/{strategy_id}/charts/{metric}
+```
+
+Chart requests support `range` values such as `30m`, `1h`, and `1d`, or
+explicit `start` and `end` timestamp bounds. Explicit bounds take precedence
+over `range`. Invalid or reversed ranges return `400 Bad Request`.
+
+Performance and chart history are bounded by the configured `maxHistorySize`.
+Live performance samples are recorded while visualization is enabled; chart
+history is populated by chart-data producers through the visualization API.
+
 ## Performance
 
 - **Order Book Update Latency**: <1 μs

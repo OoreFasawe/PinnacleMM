@@ -239,16 +239,26 @@ const ws = new WebSocket('ws://localhost:8080');
 #### Get Performance Data
 ```http
 GET /api/v1/strategies/{strategy_id}/performance
-?start_time=1672531200000000000
-&end_time=1672617600000000000
+?start=1672531200000000000
+&end=1672617600000000000
+&limit=100
 ```
+
+Requests without `start`, `end`, or `limit` return the latest performance
+snapshot as an object. Requests with any of these parameters return an array
+of retained snapshots matching the inclusive timestamp bounds. `limit` limits
+the number of returned snapshots. Unknown parameters are ignored.
 
 #### Get Chart Data
 ```http
 GET /api/v1/strategies/{strategy_id}/charts/{metric}
-?timeframe=1d
-&format=json
+?range=1d
 ```
+
+The `range` parameter accepts durations with `s`, `m`, `h`, or `d` units, for
+example `30m`, `1h`, or `1d`. Alternatively, use `start` and `end` timestamp
+bounds. Explicit bounds take precedence over `range`; invalid or reversed
+ranges return `400 Bad Request`.
 
 #### Get Backtest Results
 ```http
