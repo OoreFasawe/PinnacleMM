@@ -228,6 +228,9 @@ public:
   void start();
   void stop();
 
+  http::response<http::string_body>
+  handleRequest(http::request<http::string_body>&& req);
+
 private:
   std::shared_ptr<PerformanceCollector> m_collector;
   std::shared_ptr<net::io_context> m_ioc;
@@ -240,8 +243,6 @@ private:
   void runServer();
 
   // Route handlers (to be called by HttpSession)
-  http::response<http::string_body>
-  handleRequest(http::request<http::string_body>&& req);
   http::response<http::string_body> handleGetStrategies();
   http::response<http::string_body>
   handleGetPerformance(const std::string& strategyId, const std::string& query);

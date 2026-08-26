@@ -4,6 +4,18 @@
 
 namespace pinnacle::visualization {
 
+class RestHandler : public ::testing::Test {
+protected:
+  std::shared_ptr<PerformanceCollector> collector =
+      std::make_shared<PerformanceCollector>();
+  RestAPIServer server{collector};
+
+  http::response<http::string_body> get(const std::string& target) {
+    http::request<http::string_body> request{http::verb::get, target, 11};
+    return server.handleRequest(std::move(request));
+  }
+};
+
 class PerformanceHistory : public ::testing::Test {
 protected:
   PerformanceCollector collector;
@@ -132,6 +144,61 @@ TEST(QueryString, SkipsMalformedParameters) {
 TEST(ChartRouting, ExtractsStrategyAndMetricPath) {
   EXPECT_EQ(extractPath("/api/v1/strategies/strategy/charts/pnl?range=1h"),
             "/api/v1/strategies/strategy/charts/pnl");
+}
+
+TEST_F(RestHandler, ReturnsFilteredPerformanceHistoryAndPreservesLatestShape) {
+  PerformanceData first;
+  first.timestamp = 100;
+  first.pnl = 1.0;
+  PerformanceData second;
+  second.timestamp = 200;
+  second.pnl = 2.0;
+  collector->recordPerformance("strategy", first);
+  collector->recordPerformance("strategy", second);
+
+  auto ranged =
+      get("/api/v1/strategies/strategy/performance?start=100&end=200");
+  auto latest = get("/api/v1/strategies/strategy/performance");
+
+  ASSERT_EQ(ranged.result(), http::status::ok);
+  EXPECT_TRUE(nlohmann::json::parse(ranged.body())["data"].is_array());
+  EXPECT_TRUE(nlohmann::json::parse(latest.body())["data"].is_object());
+}
+
+TEST_F(RestHandler, RejectsInvalidAndReversedPerformanceRanges) {
+  EXPECT_EQ(get("/api/v1/strategies/strategy/performance?start=abc").result(),
+            http::status::bad_request);
+  EXPECT_EQ(
+      get("/api/v1/strategies/strategy/performance?start=200&end=100").result(),
+      http::status::bad_request);
+}
+
+TEST_F(RestHandler, ReturnsEmptyArrayForPerformanceRangeWithNoMatches) {
+  PerformanceData data;
+  data.timestamp = 100;
+  collector->recordPerformance("strategy", data);
+
+  auto response =
+      get("/api/v1/strategies/strategy/performance?start=200&end=300");
+  auto body = nlohmann::json::parse(response.body());
+
+  ASSERT_EQ(response.result(), http::status::ok);
+  EXPECT_TRUE(body["data"].is_array());
+  EXPECT_TRUE(body["data"].empty());
+}
+
+TEST_F(RestHandler, RejectsInvalidPerformanceLimit) {
+  EXPECT_EQ(get("/api/v1/strategies/strategy/performance?limit=abc").result(),
+            http::status::bad_request);
+}
+
+TEST_F(PerformanceHistory, UnregisterClearsHistory) {
+  PerformanceData data;
+  data.timestamp = 100;
+  collector.recordPerformance("strategy", data);
+  collector.unregisterStrategy("strategy");
+
+  EXPECT_TRUE(collector.getPerformanceHistory("strategy", 0, 200).empty());
 }
 
 } // namespace pinnacle::visualization
